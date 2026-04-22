@@ -66,8 +66,15 @@ certs/ca.*
 !certs/*.example
 
 # Docker volumes data
-openldap/database/
-openldap/config/
+*.mdb
+
+docker-openldap-was-*
+!docker-openldap-was-*.example
+
+*.ldif
+!*.ldif.expamle
+
+
 mysql/
 data/logs/
 

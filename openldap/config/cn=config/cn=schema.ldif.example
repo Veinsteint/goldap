@@ -1,0 +1,5 @@
+# AUTO-GENERATED FILE - DO NOT EDIT!! Use ldapmodify.
+dn: cn=schema
+objectClass: olcSchemaConfig
+cn: schema
+structuralObjectClass: olcSchemaConfig

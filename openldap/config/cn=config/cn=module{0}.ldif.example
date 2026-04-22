@@ -1,0 +1,6 @@
+# AUTO-GENERATED FILE - DO NOT EDIT!! Use ldapmodify.
+dn: cn=module{0}
+objectClass: olcModuleConfig
+cn: module{0}
+olcModuleLoad: back_mdb
+olcModulePath: /opt/openldap/lib/openldap

@@ -1,0 +1,11 @@
+# AUTO-GENERATED FILE - DO NOT EDIT!! Use ldapmodify.
+# memberof overlay configuration
+dn: olcOverlay={0}memberof
+objectClass: olcOverlayConfig
+objectClass: olcMemberOfConfig
+structuralObjectClass: olcMemberOfConfig
+olcOverlay: {0}memberof
+olcMemberOfRefInt: TRUE
+olcMemberOfGroupOC: groupOfNames
+olcMemberOfMemberAD: member
+olcMemberOfMemberOF: memberOf

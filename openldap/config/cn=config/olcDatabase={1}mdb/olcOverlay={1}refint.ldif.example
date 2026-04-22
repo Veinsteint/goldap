@@ -1,0 +1,12 @@
+# AUTO-GENERATED FILE - DO NOT EDIT!! Use ldapmodify.
+# referential integrity overlay configuration
+dn: olcOverlay={1}refint
+objectClass: olcOverlayConfig
+objectClass: olcRefintConfig
+structuralObjectClass: olcRefintConfig
+olcOverlay: {1}refint
+olcRefintAttribute: member
+olcRefintAttribute: memberOf
+olcRefintAttribute: uniqueMember
+olcRefintAttribute: owner
+olcRefintAttribute: seeAlso

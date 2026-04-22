@@ -1,0 +1,12 @@
+# LDAP Structure Initialization
+# Creates necessary OU structures for:
+# 1. Centralized sudo management (ou=sudoers)
+# 2. SSH public key support (sshPublicKey attribute)
+
+# Create sudoers OU for centralized sudo management
+dn: ou=sudoers,dc=cmplab,dc=com
+objectClass: organizationalUnit
+objectClass: top
+ou: sudoers
+description: Centralized sudo rules container
+

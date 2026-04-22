@@ -1,0 +1,235 @@
+# GoLDAP Docker Compose Configuration
+# Includes OpenLDAP with TLS and sudo support, MySQL, and GoLDAP Server
+#
+# Usage:
+#   1. Copy this file to docker-compose.yaml
+#   2. Replace all placeholder values with your actual configuration
+#   3. Update volume paths to match your directory structure
+#
+# Variables to customize:
+#   - LDAP_ORGANISATION / LDAP_DOMAIN / LDAP_BASE_DN
+#   - All password fields (LDAP_ADMIN_PASSWORD, MYSQL_*, etc.)
+#   - Volume paths (/path/to/your/project)
+#   - JWT key and other secrets
+
+services:
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: goldap.ldap
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      LDAP_ORGANISATION: "example.com"
+      LDAP_DOMAIN: "example.com"
+      LDAP_ADMIN_PASSWORD: "CHANGE_ME_LDAP_ADMIN_PASSWORD"
+      LDAP_ALLOW_ANON_BINDING: "true"
+      LDAP_BASE_DN: "dc=example,dc=com"
+      LDAP_LOG_LEVEL: "0"
+      # TLS Configuration
+      LDAP_TLS: "true"
+      LDAP_TLS_CRT_FILENAME: "ldap.crt"
+      LDAP_TLS_KEY_FILENAME: "ldap.key"
+      LDAP_TLS_CA_CRT_FILENAME: "ca.crt"
+      LDAP_TLS_ENFORCE: "false"
+      LDAP_TLS_VERIFY_CLIENT: "try"
+    command: ['--copy-service']
+    volumes:
+      # Data persistence - update paths to match your directory structure
+      - /path/to/your/project/openldap/database:/var/lib/ldap
+      - /path/to/your/project/openldap/config:/etc/ldap/slapd.d
+      # TLS certificates
+      - /path/to/your/project/certs:/container/service/slapd/assets/certs
+      # Bootstrap scripts (sudo schema and structure initialization)
+      - /path/to/your/project/openldap/bootstrap:/container/service/slapd/assets/config/bootstrap/ldif/custom
+    network_mode: host
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://127.0.0.1:389", "-b", "", "-s", "base"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  mysql:
+    image: mysql:8.0
+    container_name: goldap.mysql
+    restart: always
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_ROOT_PASSWORD: "CHANGE_ME_MYSQL_ROOT_PASSWORD"
+      MYSQL_DATABASE: "goldap"
+      MYSQL_USER: "CHANGE_ME_MYSQL_USER"
+      MYSQL_PASSWORD: "CHANGE_ME_MYSQL_PASSWORD"
+      MYSQL_CHARACTER_SET_SERVER: "utf8mb4"
+      MYSQL_COLLATION_SERVER: "utf8mb4_general_ci"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --bind-address=0.0.0.0
+    volumes:
+      - /path/to/your/project/mysql:/var/lib/mysql
+      - /path/to/your/project/initdb/:/docker-entrypoint-initdb.d/:ro
+    network_mode: host
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-pCHANGE_ME_MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  goldap-server:
+    image: goldap-server:latest
+    container_name: goldap.server
+    restart: always
+    network_mode: host
+    working_dir: /app/data/server
+    environment:
+      WAIT_HOSTS: 127.0.0.1:389,127.0.0.1:3306
+      TZ: Asia/Shanghai
+      LDAP_ALLOW_ANON_BINDING: "true"
+      API_BASE_URL: ""
+    command:
+      - /bin/sh
+      - -c
+      - |
+        echo "=== Starting goldap-server ==="
+        exec ./bin/goldap-server
+    configs:
+      - source: goldap-server-config
+        target: /app/config.yml
+    volumes:
+      - /path/to/your/project/goldap:/app/data
+    depends_on:
+      openldap:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+
+  # One-time initialization container for sudo schema
+  ldap-init:
+    image: osixia/openldap:1.5.0
+    container_name: goldap.ldap-init
+    network_mode: host
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Waiting for LDAP server..."
+        sleep 10
+
+        echo "=== Loading sudo schema ==="
+        if ldapsearch -x -H ldap://127.0.0.1:389 -D "cn=admin,dc=example,dc=com" -w "CHANGE_ME_LDAP_ADMIN_PASSWORD" -b "cn=schema,cn=config" "(cn=*sudo*)" dn 2>/dev/null | grep -q "sudo"; then
+            echo "[SKIP] sudo schema already loaded"
+        else
+            echo "[INFO] Loading sudo schema..."
+            ldapadd -x -H ldap://127.0.0.1:389 -D "cn=admin,dc=example,dc=com" -w "CHANGE_ME_LDAP_ADMIN_PASSWORD" -f /ldif/sudo-schema.ldif 2>&1 || echo "[WARN] Schema load returned non-zero"
+        fi
+
+        echo "=== Creating sudoers OU ==="
+        ldapsearch -x -H ldap://127.0.0.1:389 -D "cn=admin,dc=example,dc=com" -w "CHANGE_ME_LDAP_ADMIN_PASSWORD" -b "ou=sudoers,dc=example,dc=com" -s base 2>/dev/null && echo "[SKIP] sudoers OU exists" || {
+            cat <<EOF | ldapadd -x -H ldap://127.0.0.1:389 -D "cn=admin,dc=example,dc=com" -w "CHANGE_ME_LDAP_ADMIN_PASSWORD" 2>&1 || echo "[WARN] sudoers OU may exist"
+        dn: ou=sudoers,dc=example,dc=com
+        objectClass: organizationalUnit
+        objectClass: top
+        ou: sudoers
+        description: SUDO rules container
+        EOF
+        }
+
+        echo "=== Creating sudo defaults ==="
+        ldapsearch -x -H ldap://127.0.0.1:389 -D "cn=admin,dc=example,dc=com" -w "CHANGE_ME_LDAP_ADMIN_PASSWORD" -b "cn=defaults,ou=sudoers,dc=example,dc=com" -s base 2>/dev/null && echo "[SKIP] defaults exists" || {
+            cat <<EOF | ldapadd -x -H ldap://127.0.0.1:389 -D "cn=admin,dc=example,dc=com" -w "CHANGE_ME_LDAP_ADMIN_PASSWORD" 2>&1 || echo "[WARN] defaults may exist"
+        dn: cn=defaults,ou=sudoers,dc=example,dc=com
+        objectClass: top
+        objectClass: sudoRole
+        cn: defaults
+        sudoOption: !authenticate
+        sudoOption: env_reset
+        EOF
+        }
+
+        echo "=== Creating all-users sudo rule ==="
+        ldapsearch -x -H ldap://127.0.0.1:389 -D "cn=admin,dc=example,dc=com" -w "CHANGE_ME_LDAP_ADMIN_PASSWORD" -b "cn=all-users,ou=sudoers,dc=example,dc=com" -s base 2>/dev/null && echo "[SKIP] all-users rule exists" || {
+            cat <<EOF | ldapadd -x -H ldap://127.0.0.1:389 -D "cn=admin,dc=example,dc=com" -w "CHANGE_ME_LDAP_ADMIN_PASSWORD" 2>&1 || echo "[WARN] all-users rule may exist"
+        dn: cn=all-users,ou=sudoers,dc=example,dc=com
+        objectClass: top
+        objectClass: sudoRole
+        cn: all-users
+        sudoUser: ALL
+        sudoHost: ALL
+        sudoCommand: ALL
+        sudoOption: !authenticate
+        EOF
+        }
+
+        echo "=== LDAP initialization complete ==="
+    volumes:
+      - /path/to/your/project/openldap/bootstrap/ldif:/ldif:ro
+    depends_on:
+      openldap:
+        condition: service_healthy
+    restart: "no"
+
+configs:
+  goldap-server-config:
+    content: |
+      # GoLDAP Server Configuration
+      system:
+        mode: debug
+        url-path-prefix: api
+        port: 8150
+        init-data: true
+      logs:
+        level: -1
+        path: data/logs
+        max-size: 50
+        max-backups: 100
+        max-age: 30
+        compress: false
+      database:
+        driver: mysql
+        source: data/goldap-mysql.db
+      mysql:
+        username: CHANGE_ME_MYSQL_USER
+        password: CHANGE_ME_MYSQL_PASSWORD
+        database: goldap
+        host: 127.0.0.1
+        port: 3306
+        query: parseTime=True&loc=Local&timeout=10000ms
+        log-mode: true
+        table-prefix: tb
+        charset: utf8mb4
+        collation: utf8mb4_general_ci
+      jwt:
+        realm: goldap-jwt-dev
+        key: CHANGE_ME_JWT_SECRET_KEY
+        timeout: 12000
+        max-refresh: 12000
+      rate-limit:
+        fill-interval: 50
+        capacity: 200
+      email:
+        port: '465'
+        user: 'no-reply@example.com'
+        from: 'goldap-server'
+        host: 'smtp.example.com'
+        is-ssl: true
+        pass: 'CHANGE_ME_EMAIL_PASSWORD'
+      ldap:
+        url: ldap://127.0.0.1:389
+        max-conn: 50
+        base-dn: "dc=example,dc=com"
+        admin-dn: "cn=admin,dc=example,dc=com"
+        admin-pass: "CHANGE_ME_LDAP_ADMIN_PASSWORD"
+        user-dn: "ou=users,dc=example,dc=com"
+        user-init-password: "CHANGE_ME_USER_INIT_PASSWORD"
+        group-name-modify: false
+        user-name-modify: false
+        user-password-encryption-type: "ssha"
+        default-email-suffix: "example.com"
+        allow-anon-binding: true

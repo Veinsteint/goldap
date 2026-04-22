@@ -1,0 +1,93 @@
+# GoLDAP Server Configuration
+# Mode: debug/release/test (use release for production)
+#
+# Variables to customize:
+#   - Database credentials (username, password)
+#   - JWT secret key
+#   - Email settings (host, user, password)
+#   - LDAP settings (base-dn, admin-pass, user-dn, etc.)
+
+system:
+  mode: release
+  url-path-prefix: api
+  port: 8150
+  init-data: true
+
+# Logging configuration
+logs:
+  # Log levels: -1:Debug, 0:Info, 1:Warn, 2:Error, 3:DPanic, 4:Panic, 5:Fatal
+  level: 0
+  path: data/logs
+  max-size: 50        # Maximum file size in MB
+  max-backups: 100    # Maximum number of backup files
+  max-age: 30         # Maximum days to retain log files
+  compress: false
+
+# Database driver: mysql or sqlite3
+database:
+  driver: mysql
+  source: data/goldap-mysql.db
+
+# MySQL connection settings
+mysql:
+  username: CHANGE_ME_MYSQL_USER
+  password: CHANGE_ME_MYSQL_PASSWORD
+  database: goldap
+  host: localhost
+  port: 3306
+  query: parseTime=True&loc=Local&timeout=30s&readTimeout=30s&writeTimeout=30s
+  log-mode: true
+  table-prefix: tb
+  charset: utf8mb4
+  collation: utf8mb4_general_ci
+
+# JWT authentication settings
+jwt:
+  realm: goldap-jwt-dev
+  key: CHANGE_ME_JWT_SECRET_KEY
+  timeout: 12000        # Token expiry in hours
+  max-refresh: 12000    # Max refresh token expiry in hours
+
+# Rate limiting (token bucket algorithm)
+rate-limit:
+  fill-interval: 50     # Token fill interval in milliseconds
+  capacity: 200         # Bucket capacity
+
+# Email configuration for notifications
+email:
+  port: '465'
+  user: 'no-reply@example.com'
+  from: 'goldap-server'
+  host: 'smtp.example.com'
+  is-ssl: true
+  pass: 'CHANGE_ME_EMAIL_PASSWORD'
+
+# LDAP server settings
+ldap:
+  url: ldap://localhost:389
+  max-conn: 50
+  base-dn: "dc=example,dc=com"
+  admin-dn: "cn=admin,dc=example,dc=com"
+  admin-pass: "CHANGE_ME_LDAP_ADMIN_PASSWORD"
+  user-dn: "ou=users,dc=example,dc=com"
+  user-init-password: "CHANGE_ME_USER_INIT_PASSWORD"
+  group-name-modify: false
+  user-name-modify: false
+  user-password-encryption-type: "ssha"
+  default-email-suffix: "example.com"
+  # Anonymous binding: queries use anonymous, modifications use admin credentials
+  allow-anon-binding: true
+
+# Registration settings
+registration:
+  # Mode: "open" = allow any username, "preconfig" = only allow usernames in pre-config
+  mode: preconfig
+
+# ====================================
+# Security Notes
+# ====================================
+# 1. Change all CHANGE_ME_* values before production use
+# 2. Use strong, unique passwords and keys
+# 3. Store this file securely - it contains sensitive information
+# 4. Never commit this file to version control
+# 5. Use environment variables for secrets in production

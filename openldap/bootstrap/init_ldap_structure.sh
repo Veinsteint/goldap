@@ -1,0 +1,87 @@
+#!/bin/bash
+# Initialize LDAP structure (sudoers OU and default rules)
+# Run after sudo schema is loaded
+
+set -e
+
+LDAP_HOST="${LDAP_HOST:-localhost}"
+LDAP_ADMIN_DN="${LDAP_ADMIN_DN:-cn=admin,dc=cmplab,dc=com}"
+LDAP_ADMIN_PASS="${LDAP_ADMIN_PASS:-CMP.Lab2025}"
+LDAP_BASE_DN="${LDAP_BASE_DN:-dc=cmplab,dc=com}"
+
+echo "=========================================="
+echo "LDAP Structure Initialization"
+echo "=========================================="
+echo "LDAP Server: ${LDAP_HOST}"
+echo "Base DN: ${LDAP_BASE_DN}"
+echo ""
+
+# Check LDAP connection
+echo "1. Checking connection..."
+if ! ldapsearch -x -H ldap://${LDAP_HOST} -D "${LDAP_ADMIN_DN}" -w "${LDAP_ADMIN_PASS}" -b "${LDAP_BASE_DN}" -s base "(objectClass=*)" dn > /dev/null 2>&1; then
+    echo "[ERROR] Cannot connect to LDAP server"
+    exit 1
+fi
+echo "[OK] Connected"
+
+# Create sudoers OU
+echo "2. Creating sudoers OU..."
+ldapsearch -x -H ldap://${LDAP_HOST} -D "${LDAP_ADMIN_DN}" -w "${LDAP_ADMIN_PASS}" -b "ou=sudoers,${LDAP_BASE_DN}" -s base 2>/dev/null && {
+    echo "[SKIP] sudoers OU already exists"
+} || {
+    cat <<EOF | ldapadd -x -H ldap://${LDAP_HOST} -D "${LDAP_ADMIN_DN}" -w "${LDAP_ADMIN_PASS}" 2>&1 || echo "[WARN] May already exist"
+dn: ou=sudoers,${LDAP_BASE_DN}
+objectClass: organizationalUnit
+objectClass: top
+ou: sudoers
+description: Centralized sudo rules
+EOF
+    echo "[OK] sudoers OU created"
+}
+
+# Create sudo defaults
+echo "3. Creating sudo defaults..."
+ldapsearch -x -H ldap://${LDAP_HOST} -D "${LDAP_ADMIN_DN}" -w "${LDAP_ADMIN_PASS}" -b "cn=defaults,ou=sudoers,${LDAP_BASE_DN}" -s base 2>/dev/null && {
+    echo "[SKIP] defaults already exists"
+} || {
+    cat <<EOF | ldapadd -x -H ldap://${LDAP_HOST} -D "${LDAP_ADMIN_DN}" -w "${LDAP_ADMIN_PASS}" 2>&1 || echo "[WARN] May already exist"
+dn: cn=defaults,ou=sudoers,${LDAP_BASE_DN}
+objectClass: top
+objectClass: sudoRole
+cn: defaults
+sudoUser: ALL
+sudoHost: ALL
+sudoCommand: ALL
+sudoOption: !authenticate
+sudoOption: env_reset
+EOF
+    echo "[OK] defaults created"
+}
+
+# Create all-users rule
+echo "4. Creating all-users sudo rule..."
+ldapsearch -x -H ldap://${LDAP_HOST} -D "${LDAP_ADMIN_DN}" -w "${LDAP_ADMIN_PASS}" -b "cn=all-users,ou=sudoers,${LDAP_BASE_DN}" -s base 2>/dev/null && {
+    echo "[SKIP] all-users rule already exists"
+} || {
+    cat <<EOF | ldapadd -x -H ldap://${LDAP_HOST} -D "${LDAP_ADMIN_DN}" -w "${LDAP_ADMIN_PASS}" 2>&1 || echo "[WARN] May already exist"
+dn: cn=all-users,ou=sudoers,${LDAP_BASE_DN}
+objectClass: top
+objectClass: sudoRole
+cn: all-users
+sudoUser: ALL
+sudoHost: ALL
+sudoCommand: ALL
+sudoOption: !authenticate
+EOF
+    echo "[OK] all-users rule created"
+}
+
+echo ""
+echo "=========================================="
+echo "[OK] LDAP Structure Ready"
+echo "=========================================="
+echo ""
+echo "Sudo rules configured:"
+echo "  - All users can sudo without password"
+echo "  - Rules location: ou=sudoers,${LDAP_BASE_DN}"
+

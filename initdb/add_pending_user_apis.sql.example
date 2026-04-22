@@ -1,0 +1,46 @@
+-- Add pending user related APIs and permissions
+-- Usage: Execute this script after init.sql to enable pending user approval workflow
+--
+-- This script adds:
+--   - API endpoints for managing pending users
+--   - Casbin policies for admin role to access these endpoints
+
+USE `goldap`;
+
+-- Add APIs if not exist
+INSERT INTO `apis` (`method`, `path`, `category`, `remark`, `creator`, `created_at`, `updated_at`)
+SELECT 'GET', '/user/pending/list', 'user', 'Get pending users list', 'system', NOW(), NOW()
+WHERE NOT EXISTS (
+    SELECT 1 FROM `apis` WHERE `method` = 'GET' AND `path` = '/user/pending/list'
+);
+
+INSERT INTO `apis` (`method`, `path`, `category`, `remark`, `creator`, `created_at`, `updated_at`)
+SELECT 'POST', '/user/pending/review', 'user', 'Review pending user', 'system', NOW(), NOW()
+WHERE NOT EXISTS (
+    SELECT 1 FROM `apis` WHERE `method` = 'POST' AND `path` = '/user/pending/review'
+);
+
+INSERT INTO `apis` (`method`, `path`, `category`, `remark`, `creator`, `created_at`, `updated_at`)
+SELECT 'POST', '/user/pending/delete', 'user', 'Delete pending user', 'system', NOW(), NOW()
+WHERE NOT EXISTS (
+    SELECT 1 FROM `apis` WHERE `method` = 'POST' AND `path` = '/user/pending/delete'
+);
+
+-- Add Casbin policies for admin role
+INSERT INTO `casbin_rule` (`ptype`, `v0`, `v1`, `v2`)
+SELECT 'p', 'admin', '/user/pending/list', 'GET'
+WHERE NOT EXISTS (
+    SELECT 1 FROM `casbin_rule` WHERE `ptype` = 'p' AND `v0` = 'admin' AND `v1` = '/user/pending/list' AND `v2` = 'GET'
+);
+
+INSERT INTO `casbin_rule` (`ptype`, `v0`, `v1`, `v2`)
+SELECT 'p', 'admin', '/user/pending/review', 'POST'
+WHERE NOT EXISTS (
+    SELECT 1 FROM `casbin_rule` WHERE `ptype` = 'p' AND `v0` = 'admin' AND `v1` = '/user/pending/review' AND `v2` = 'POST'
+);
+
+INSERT INTO `casbin_rule` (`ptype`, `v0`, `v1`, `v2`)
+SELECT 'p', 'admin', '/user/pending/delete', 'POST'
+WHERE NOT EXISTS (
+    SELECT 1 FROM `casbin_rule` WHERE `ptype` = 'p' AND `v0` = 'admin' AND `v1` = '/user/pending/delete' AND `v2` = 'POST'
+);

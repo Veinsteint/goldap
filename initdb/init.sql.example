@@ -1,0 +1,275 @@
+-- GoldAP Database Initialization
+-- Usage: Replace placeholder values with your actual configuration
+--
+-- Variables to customize:
+--   - Database name: goldap
+--   - Domain example.com
+--   - Group names: ExampleGroup, docker
+--   - IP ranges: Adjust as needed for your environment
+
+CREATE DATABASE IF NOT EXISTS `goldap`
+  DEFAULT CHARACTER SET utf8mb4
+  DEFAULT COLLATE utf8mb4_general_ci;
+
+USE `goldap`;
+
+-- Users table
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) DEFAULT NULL,
+  `updated_at` datetime(3) DEFAULT NULL,
+  `deleted_at` datetime(3) DEFAULT NULL,
+  `username` varchar(50) NOT NULL,
+  `password` varchar(255) NOT NULL,
+  `nickname` varchar(50) DEFAULT NULL,
+  `given_name` varchar(50) DEFAULT NULL,
+  `mail` varchar(100) NOT NULL,
+  `job_number` varchar(20) DEFAULT NULL,
+  `mobile` varchar(15) DEFAULT NULL,
+  `avatar` varchar(255) DEFAULT NULL,
+  `postal_address` varchar(255) DEFAULT NULL,
+  `departments` varchar(512) DEFAULT NULL,
+  `position` varchar(128) DEFAULT NULL,
+  `introduction` varchar(255) DEFAULT NULL,
+  `status` tinyint(1) DEFAULT 1 COMMENT '1:active, 2:inactive',
+  `creator` varchar(20) DEFAULT NULL,
+  `source` varchar(50) DEFAULT NULL COMMENT 'ldap, platform',
+  `department_id` varchar(100) NOT NULL,
+  `source_user_id` varchar(100) NOT NULL,
+  `source_union_id` varchar(100) NOT NULL,
+  `user_dn` varchar(255) NOT NULL,
+  `sync_state` tinyint(1) DEFAULT 1 COMMENT '1:synced, 2:not synced',
+  `uid_number` int DEFAULT NULL COMMENT 'Unix UID',
+  `gid_number` int DEFAULT 100 COMMENT 'Unix GID',
+  `home_directory` varchar(255) DEFAULT NULL,
+  `login_shell` varchar(255) DEFAULT '/bin/bash',
+  `gecos` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_username` (`username`),
+  UNIQUE KEY `idx_mail` (`mail`),
+  UNIQUE KEY `idx_uid_number` (`uid_number`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Roles table
+CREATE TABLE IF NOT EXISTS `roles` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) DEFAULT NULL,
+  `updated_at` datetime(3) DEFAULT NULL,
+  `deleted_at` datetime(3) DEFAULT NULL,
+  `name` varchar(20) NOT NULL,
+  `keyword` varchar(20) NOT NULL,
+  `remark` varchar(100) DEFAULT NULL,
+  `status` tinyint(1) DEFAULT 1 COMMENT '1:enabled, 2:disabled',
+  `sort` int(3) DEFAULT 999,
+  `creator` varchar(20) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_name` (`name`),
+  UNIQUE KEY `idx_keyword` (`keyword`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Groups table
+CREATE TABLE IF NOT EXISTS `groups` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) DEFAULT NULL,
+  `updated_at` datetime(3) DEFAULT NULL,
+  `deleted_at` datetime(3) DEFAULT NULL,
+  `group_name` varchar(128) DEFAULT NULL,
+  `remark` varchar(128) DEFAULT NULL,
+  `creator` varchar(20) DEFAULT NULL,
+  `group_type` varchar(20) DEFAULT NULL COMMENT 'cn, ou, posix',
+  `gid_number` int DEFAULT 0 COMMENT 'POSIX GID number',
+  `parent_id` bigint(20) unsigned DEFAULT 0,
+  `source_dept_id` varchar(100) DEFAULT NULL,
+  `source` varchar(20) DEFAULT NULL COMMENT 'ldap, platform',
+  `source_dept_parent_id` varchar(100) DEFAULT NULL,
+  `source_user_num` int DEFAULT 0,
+  `group_dn` varchar(255) NOT NULL,
+  `sync_state` tinyint(1) DEFAULT 1,
+  `ip_ranges` text DEFAULT NULL COMMENT 'JSON format',
+  PRIMARY KEY (`id`),
+  KEY `idx_parent_id` (`parent_id`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Menus table
+CREATE TABLE IF NOT EXISTS `menus` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) DEFAULT NULL,
+  `updated_at` datetime(3) DEFAULT NULL,
+  `deleted_at` datetime(3) DEFAULT NULL,
+  `name` varchar(50) DEFAULT NULL,
+  `title` varchar(50) DEFAULT NULL,
+  `icon` varchar(50) DEFAULT NULL,
+  `path` varchar(100) DEFAULT NULL,
+  `redirect` varchar(100) DEFAULT NULL,
+  `component` varchar(100) DEFAULT NULL,
+  `sort` int(3) DEFAULT 999,
+  `status` tinyint(1) DEFAULT 1,
+  `hidden` tinyint(1) DEFAULT 2,
+  `no_cache` tinyint(1) DEFAULT 2,
+  `always_show` tinyint(1) DEFAULT 2,
+  `breadcrumb` tinyint(1) DEFAULT 1,
+  `active_menu` varchar(100) DEFAULT NULL,
+  `parent_id` bigint(20) unsigned DEFAULT 0,
+  `creator` varchar(20) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_parent_id` (`parent_id`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- APIs table
+CREATE TABLE IF NOT EXISTS `apis` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) DEFAULT NULL,
+  `updated_at` datetime(3) DEFAULT NULL,
+  `deleted_at` datetime(3) DEFAULT NULL,
+  `method` varchar(20) DEFAULT NULL,
+  `path` varchar(100) DEFAULT NULL,
+  `category` varchar(50) DEFAULT NULL,
+  `remark` varchar(100) DEFAULT NULL,
+  `creator` varchar(20) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Operation logs table
+CREATE TABLE IF NOT EXISTS `operation_logs` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) DEFAULT NULL,
+  `updated_at` datetime(3) DEFAULT NULL,
+  `deleted_at` datetime(3) DEFAULT NULL,
+  `username` varchar(20) DEFAULT NULL,
+  `ip` varchar(20) DEFAULT NULL,
+  `ip_location` varchar(20) DEFAULT NULL,
+  `method` varchar(20) DEFAULT NULL,
+  `path` varchar(100) DEFAULT NULL,
+  `remark` varchar(100) DEFAULT NULL,
+  `status` int(4) DEFAULT NULL,
+  `start_time` varchar(2048) DEFAULT NULL,
+  `time_cost` bigint(6) DEFAULT NULL,
+  `user_agent` varchar(2048) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_username` (`username`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Field relations table
+CREATE TABLE IF NOT EXISTS `field_relations` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) DEFAULT NULL,
+  `updated_at` datetime(3) DEFAULT NULL,
+  `deleted_at` datetime(3) DEFAULT NULL,
+  `flag` varchar(255) DEFAULT NULL,
+  `attributes` json DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- User roles relation
+CREATE TABLE IF NOT EXISTS `user_roles` (
+  `user_id` bigint(20) unsigned NOT NULL,
+  `role_id` bigint(20) unsigned NOT NULL,
+  PRIMARY KEY (`user_id`, `role_id`),
+  KEY `idx_role_id` (`role_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Role menus relation
+CREATE TABLE IF NOT EXISTS `role_menus` (
+  `role_id` bigint(20) unsigned NOT NULL,
+  `menu_id` bigint(20) unsigned NOT NULL,
+  PRIMARY KEY (`role_id`, `menu_id`),
+  KEY `idx_menu_id` (`menu_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Group users relation
+CREATE TABLE IF NOT EXISTS `group_users` (
+  `group_id` bigint(20) unsigned NOT NULL,
+  `user_id` bigint(20) unsigned NOT NULL,
+  PRIMARY KEY (`group_id`, `user_id`),
+  KEY `idx_user_id` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Group user permissions
+CREATE TABLE IF NOT EXISTS `group_user_permissions` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) DEFAULT NULL,
+  `updated_at` datetime(3) DEFAULT NULL,
+  `deleted_at` datetime(3) DEFAULT NULL,
+  `group_id` bigint(20) unsigned NOT NULL,
+  `user_id` bigint(20) unsigned NOT NULL,
+  `allow_sudo` tinyint(1) DEFAULT 0,
+  `allow_ssh_key` tinyint(1) DEFAULT 1,
+  `sudo_rules` text DEFAULT NULL COMMENT 'JSON format',
+  PRIMARY KEY (`id`),
+  KEY `idx_group_id` (`group_id`),
+  KEY `idx_user_id` (`user_id`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Pending users table
+CREATE TABLE IF NOT EXISTS `pending_users` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) DEFAULT NULL,
+  `updated_at` datetime(3) DEFAULT NULL,
+  `deleted_at` datetime(3) DEFAULT NULL,
+  `username` varchar(50) NOT NULL,
+  `password` text NOT NULL,
+  `mail` varchar(100) NOT NULL,
+  `nickname` varchar(50) DEFAULT NULL,
+  `remark` varchar(200) DEFAULT NULL,
+  `status` tinyint(1) DEFAULT 0 COMMENT '0:pending, 1:approved, 2:rejected',
+  `reviewer` varchar(50) DEFAULT NULL,
+  `review_remark` varchar(255) DEFAULT NULL,
+  `reviewed_at` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_username` (`username`),
+  UNIQUE KEY `idx_mail` (`mail`),
+  KEY `idx_status` (`status`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- User pre-configs table
+CREATE TABLE IF NOT EXISTS `user_pre_configs` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(3) DEFAULT NULL,
+  `updated_at` datetime(3) DEFAULT NULL,
+  `deleted_at` datetime(3) DEFAULT NULL,
+  `username` varchar(50) NOT NULL,
+  `mail` varchar(100) DEFAULT NULL,
+  `uid_number` int DEFAULT NULL COMMENT 'Pre-configured UID',
+  `gid_number` int DEFAULT NULL COMMENT 'Pre-configured GID',
+  `department_id` varchar(100) DEFAULT NULL,
+  `departments` varchar(512) DEFAULT NULL,
+  `mobile` varchar(15) DEFAULT NULL,
+  `job_number` varchar(20) DEFAULT NULL,
+  `position` varchar(128) DEFAULT NULL,
+  `postal_address` varchar(255) DEFAULT NULL,
+  `introduction` varchar(255) DEFAULT NULL,
+  `home_directory` varchar(255) DEFAULT NULL,
+  `login_shell` varchar(255) DEFAULT '/bin/bash',
+  `nickname` varchar(50) DEFAULT NULL,
+  `given_name` varchar(50) DEFAULT NULL,
+  `creator` varchar(20) DEFAULT NULL,
+  `remark` varchar(255) DEFAULT NULL,
+  `is_used` tinyint(1) DEFAULT 0 COMMENT 'Whether this config has been used',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_username` (`username`),
+  KEY `idx_deleted_at` (`deleted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Initialize default groups
+-- Customize these values for your environment:
+--   - Group names (ExampleGroup)
+--   - Domain (example.com)
+--   - IP ranges (JSON format)
+--   - Group descriptions
+INSERT INTO `groups` (`id`, `created_at`, `updated_at`, `group_name`, `remark`, `creator`, `group_type`, `gid_number`, `parent_id`, `source_dept_id`, `source`, `source_dept_parent_id`, `group_dn`, `sync_state`, `ip_ranges`)
+VALUES
+  (6, NOW(), NOW(), 'ExampleGroup', 'Default group', 'system', 'ou', 0, 0, 'platform_0', 'platform', 'platform_0', 'ou=ExampleGroup,dc=example,dc=com', 1, '["192.168.1.100-192.168.1.200"]'),
+  (7, NOW(), NOW(), 'sudoers', 'Sudo rules', 'system', 'ou', 0, 0, 'platform_0', 'platform', 'platform_0', 'ou=sudoers,dc=example,dc=com', 1, ''),
+  (8, NOW(), NOW(), 'sudouser-nopasswd', 'Passwordless sudo', 'system', 'cn', 0, 7, 'platform_0', 'platform', 'platform_0', 'cn=sudouser-nopasswd,ou=sudoers,dc=example,dc=com', 1, ''),
+  (9, NOW(), NOW(), 'sudouser-other', 'Sudo with password', 'system', 'cn', 0, 7, 'platform_0', 'platform', 'platform_0', 'cn=sudouser-other,ou=sudoers,dc=example,dc=com', 1, ''),
+  (10, NOW(), NOW(), 'docker', 'Docker users group (posixGroup GID=984), members can use docker command', 'system', 'posix', 984, 0, 'platform_0', 'platform', 'platform_0', 'cn=docker,dc=example,dc=com', 1, '')
+ON DUPLICATE KEY UPDATE `updated_at` = NOW();

@@ -1,0 +1,192 @@
+#!/bin/bash
+# GoLDAP Complete Deployment Script
+# Deploys OpenLDAP with TLS and sudo, MySQL, and GoLDAP Server from scratch
+#
+# Usage:
+#   LDAP_DOMAIN=example.com \
+#   LDAP_ADMIN_PASSWORD="your-ldap-admin-password" \
+#   MYSQL_ROOT_PASSWORD="your-mysql-root-password" \
+#   MYSQL_USER=ldapuser \
+#   MYSQL_PASSWORD="your-mysql-password" \
+#   ./deploy.sh
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Configuration
+LDAP_DOMAIN="${LDAP_DOMAIN:-example.com}"
+LDAP_ADMIN_PASSWORD="${LDAP_ADMIN_PASSWORD:-CHANGE_ME_LDAP_PASSWORD}"
+MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-CHANGE_ME_MYSQL_ROOT}"
+MYSQL_USER="${MYSQL_USER:-ldapuser}"
+MYSQL_PASSWORD="${MYSQL_PASSWORD:-CHANGE_ME_MYSQL_USER}"
+
+echo "=========================================="
+echo "GoLDAP Complete Deployment"
+echo "=========================================="
+echo "Project directory: ${PROJECT_DIR}"
+echo "LDAP Domain: ${LDAP_DOMAIN}"
+echo ""
+
+# Create necessary directories
+echo "1. Creating directories..."
+mkdir -p "${PROJECT_DIR}/openldap/database"
+mkdir -p "${PROJECT_DIR}/openldap/config"
+mkdir -p "${PROJECT_DIR}/openldap/bootstrap/ldif"
+mkdir -p "${PROJECT_DIR}/mysql"
+mkdir -p "${PROJECT_DIR}/certs"
+mkdir -p "${PROJECT_DIR}/goldap/server/data/logs"
+echo "[OK] Directories created"
+echo ""
+
+# Generate TLS certificates if they don't exist
+echo "2. Checking TLS certificates..."
+if [ ! -f "${PROJECT_DIR}/certs/ldap.crt" ]; then
+    echo "   Generating TLS certificates..."
+    "${SCRIPT_DIR}/generate-certs.sh"
+else
+    echo "[OK] TLS certificates already exist"
+fi
+echo ""
+
+# Set permissions on bootstrap scripts
+echo "3. Setting permissions on bootstrap scripts..."
+chmod +x "${PROJECT_DIR}/openldap/bootstrap/"*.sh 2>/dev/null || true
+echo "[OK] Permissions set"
+echo ""
+
+# Stop existing containers
+echo "4. Stopping existing containers..."
+cd "${PROJECT_DIR}/docker-compose"
+docker compose down 2>/dev/null || true
+# Remove the init container if it exists
+docker rm -f goldap.ldap-init 2>/dev/null || true
+echo "[OK] Existing containers stopped"
+echo ""
+
+# Build GoLDAP server image
+echo "5. Building GoLDAP server image..."
+cd "${PROJECT_DIR}/goldap/server"
+if [ -f "Makefile" ]; then
+    make docker 2>/dev/null || docker build -t goldap-server:latest .
+else
+    docker build -t goldap-server:latest .
+fi
+echo "[OK] GoLDAP server image built"
+echo ""
+
+# Start services
+echo "6. Starting services..."
+cd "${PROJECT_DIR}/docker-compose"
+docker compose up -d openldap mysql
+echo "[OK] OpenLDAP and MySQL started"
+echo ""
+
+# Wait for OpenLDAP to be healthy
+echo "7. Waiting for OpenLDAP to be healthy..."
+timeout=120
+while [ $timeout -gt 0 ]; do
+    if docker exec goldap.ldap ldapsearch -x -H ldap://127.0.0.1:389 -b "" -s base 2>/dev/null | grep -q "namingContexts"; then
+        break
+    fi
+    echo "   Waiting... ($timeout seconds remaining)"
+    sleep 5
+    timeout=$((timeout - 5))
+done
+if [ $timeout -le 0 ]; then
+    echo "[ERROR] OpenLDAP failed to start"
+    docker logs goldap.ldap --tail 50
+    exit 1
+fi
+echo "[OK] OpenLDAP is healthy"
+echo ""
+
+# Wait for MySQL to be healthy
+echo "8. Waiting for MySQL to be healthy..."
+timeout=120
+while [ $timeout -gt 0 ]; do
+    if docker exec goldap.mysql mysqladmin ping -h 127.0.0.1 -u root -p"${MYSQL_ROOT_PASSWORD}" 2>/dev/null | grep -q "alive"; then
+        break
+    fi
+    echo "   Waiting... ($timeout seconds remaining)"
+    sleep 5
+    timeout=$((timeout - 5))
+done
+if [ $timeout -le 0 ]; then
+    echo "[ERROR] MySQL failed to start"
+    docker logs goldap.mysql --tail 50
+    exit 1
+fi
+echo "[OK] MySQL is healthy"
+echo ""
+
+# Run LDAP initialization (sudo schema and structure)
+echo "9. Initializing LDAP with sudo schema and structure..."
+docker compose up ldap-init
+echo "[OK] LDAP initialization complete"
+echo ""
+
+# Verify sudo schema
+echo "10. Verifying sudo schema..."
+if docker exec goldap.ldap ldapsearch -x -H ldap://127.0.0.1:389 -D "cn=admin,dc=example,dc=com" -w "${LDAP_ADMIN_PASSWORD}" -b "ou=sudoers,dc=example,dc=com" "(objectClass=sudoRole)" 2>/dev/null | grep -q "sudoRole"; then
+    echo "[OK] Sudo schema and rules are configured"
+else
+    echo "[WARN] Sudo rules not found - manual configuration may be needed"
+fi
+echo ""
+
+# Start GoLDAP server
+echo "11. Starting GoLDAP server..."
+docker compose up -d goldap-server
+echo "[OK] GoLDAP server started"
+echo ""
+
+# Wait for GoLDAP server
+echo "12. Waiting for GoLDAP server..."
+timeout=60
+while [ $timeout -gt 0 ]; do
+    if curl -s http://localhost:8150/api/base/ping 2>/dev/null | grep -q "pong"; then
+        break
+    fi
+    echo "   Waiting... ($timeout seconds remaining)"
+    sleep 3
+    timeout=$((timeout - 3))
+done
+if [ $timeout -le 0 ]; then
+    echo "[WARN] GoLDAP server health check timeout - checking logs..."
+    docker logs goldap.server --tail 20
+fi
+echo "[OK] GoLDAP server is running"
+echo ""
+
+echo "=========================================="
+echo "[OK] Deployment Complete!"
+echo "=========================================="
+echo ""
+echo "Services:"
+echo "  - OpenLDAP: ldap://localhost:389 (ldaps://localhost:636 with TLS)"
+echo "  - MySQL: localhost:3306"
+echo "  - GoLDAP Web: http://localhost:8150"
+echo ""
+echo "Default credentials:"
+echo "  - LDAP Admin: cn=admin,dc=example,dc=com / ${LDAP_ADMIN_PASSWORD}"
+echo "  - MySQL Root: root / ${MYSQL_ROOT_PASSWORD}"
+echo "  - MySQL User: ${MYSQL_USER} / ${MYSQL_PASSWORD}"
+echo "  - Web Admin: admin / admin123 (⚠️ Please change after first login)"
+echo ""
+echo "Sudo configuration:"
+echo "  - All LDAP users can use sudo without password"
+echo "  - Sudo rules location: ou=sudoers,dc=example,dc=com"
+echo ""
+echo "Next steps:"
+echo "  1. Access web UI at http://localhost:8150"
+echo "  2. Login with admin credentials"
+echo "  3. Change default password"
+echo "  4. Configure users and groups"
+echo "  5. Configure client machines with SSSD"
+echo ""
+echo "To verify sudo rules:"
+echo "  docker exec goldap.ldap ldapsearch -x -H ldap://127.0.0.1:389 \\"
+echo "    -D 'cn=admin,dc=example,dc=com' -w '${LDAP_ADMIN_PASSWORD}' \\"
+echo "    -b 'ou=sudoers,dc=example,dc=com' '(objectClass=sudoRole)'"

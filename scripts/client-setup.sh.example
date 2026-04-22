@@ -1,0 +1,184 @@
+#!/bin/bash
+# LDAP Client Setup Script
+# Configures Ubuntu/Debian client for LDAP authentication with sudo support
+#
+# Usage:
+#   sudo LDAP_SERVER=ldap://YOUR_SERVER_IP \
+#        LDAP_BASE_DN="dc=example,dc=com" \
+#        LDAP_BIND_DN="cn=admin,dc=example,dc=com" \
+#        LDAP_BIND_PW="your-bind-password" \
+#        USE_TLS=true \
+#        ./client-setup.sh
+
+set -e
+
+# Configuration
+LDAP_SERVER="${LDAP_SERVER:-ldap://YOUR_SERVER_IP}"
+LDAP_BASE_DN="${LDAP_BASE_DN:-dc=example,dc=com}"
+LDAP_BIND_DN="${LDAP_BIND_DN:-cn=admin,dc=example,dc=com}"
+LDAP_BIND_PW="${LDAP_BIND_PW:-CHANGE_ME_PASSWORD}"
+USE_TLS="${USE_TLS:-false}"
+
+echo "=========================================="
+echo "LDAP Client Setup"
+echo "=========================================="
+echo "LDAP Server: ${LDAP_SERVER}"
+echo "Base DN: ${LDAP_BASE_DN}"
+echo "TLS: ${USE_TLS}"
+echo ""
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    echo "[ERROR] Please run as root"
+    exit 1
+fi
+
+# Install required packages
+echo "1. Installing required packages..."
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y sssd sssd-ldap sssd-tools libnss-sss libpam-sss ldap-utils
+echo "[OK] Packages installed"
+echo ""
+
+# Configure SSSD
+echo "2. Configuring SSSD..."
+cat > /etc/sssd/sssd.conf <<EOF
+[sssd]
+config_file_version = 2
+services = nss, pam, sudo
+domains = ldap
+
+[nss]
+filter_groups = root
+filter_users = root
+
+[pam]
+
+[sudo]
+
+[domain/ldap]
+id_provider = ldap
+auth_provider = ldap
+sudo_provider = ldap
+ldap_uri = ${LDAP_SERVER}
+ldap_search_base = ${LDAP_BASE_DN}
+ldap_default_bind_dn = ${LDAP_BIND_DN}
+ldap_default_authtok = ${LDAP_BIND_PW}
+ldap_default_authtok_type = password
+
+# User settings
+ldap_user_object_class = posixAccount
+ldap_user_name = uid
+ldap_user_uid_number = uidNumber
+ldap_user_gid_number = gidNumber
+ldap_user_home_directory = homeDirectory
+ldap_user_shell = loginShell
+ldap_user_gecos = gecos
+
+# Group settings
+ldap_group_object_class = posixGroup
+ldap_group_name = cn
+ldap_group_gid_number = gidNumber
+ldap_group_member = memberUid
+
+# Sudo settings
+ldap_sudo_search_base = ou=sudoers,${LDAP_BASE_DN}
+ldap_sudo_full_refresh_interval = 86400
+ldap_sudo_smart_refresh_interval = 3600
+
+# Authentication settings
+ldap_id_use_start_tls = ${USE_TLS}
+ldap_tls_reqcert = allow
+cache_credentials = true
+enumerate = true
+access_provider = permit
+
+# Connection settings
+ldap_network_timeout = 3
+ldap_opt_timeout = 3
+EOF
+
+chmod 600 /etc/sssd/sssd.conf
+echo "[OK] SSSD configured"
+echo ""
+
+# Configure NSS
+echo "3. Configuring NSS..."
+# Backup original nsswitch.conf
+cp /etc/nsswitch.conf /etc/nsswitch.conf.bak
+
+# Update nsswitch.conf
+sed -i 's/^passwd:.*/passwd:         files sss/' /etc/nsswitch.conf
+sed -i 's/^group:.*/group:          files sss/' /etc/nsswitch.conf
+sed -i 's/^shadow:.*/shadow:         files sss/' /etc/nsswitch.conf
+
+# Add sudoers if not present
+if ! grep -q "^sudoers:" /etc/nsswitch.conf; then
+    echo "sudoers:        files sss" >> /etc/nsswitch.conf
+else
+    sed -i 's/^sudoers:.*/sudoers:        files sss/' /etc/nsswitch.conf
+fi
+echo "[OK] NSS configured"
+echo ""
+
+# Configure PAM for home directory creation
+echo "4. Configuring PAM..."
+if ! grep -q "pam_mkhomedir" /etc/pam.d/common-session; then
+    echo "session required pam_mkhomedir.so skel=/etc/skel umask=0022" >> /etc/pam.d/common-session
+fi
+echo "[OK] PAM configured"
+echo ""
+
+# Enable and restart SSSD
+echo "5. Starting SSSD service..."
+systemctl enable sssd
+systemctl restart sssd
+echo "[OK] SSSD started"
+echo ""
+
+# Clear caches
+echo "6. Clearing caches..."
+sss_cache -E 2>/dev/null || true
+echo "[OK] Caches cleared"
+echo ""
+
+# Verify configuration
+echo "7. Verifying configuration..."
+sleep 3
+echo "   Checking SSSD status..."
+systemctl status sssd --no-pager | head -5
+echo ""
+
+# Test LDAP connection
+echo "8. Testing LDAP connection..."
+if ldapsearch -x -H ${LDAP_SERVER} -b "${LDAP_BASE_DN}" -D "${LDAP_BIND_DN}" -w "${LDAP_BIND_PW}" "(objectClass=posixAccount)" uid 2>/dev/null | grep -q "uid:"; then
+    echo "[OK] LDAP connection successful, users found"
+else
+    echo "[WARN] LDAP connection test - no users found or connection issue"
+fi
+echo ""
+
+# Test sudo configuration
+echo "9. Testing sudo configuration..."
+if ldapsearch -x -H ${LDAP_SERVER} -b "ou=sudoers,${LDAP_BASE_DN}" -D "${LDAP_BIND_DN}" -w "${LDAP_BIND_PW}" "(objectClass=sudoRole)" 2>/dev/null | grep -q "sudoRole"; then
+    echo "[OK] Sudo rules found in LDAP"
+else
+    echo "[WARN] No sudo rules found in LDAP"
+fi
+echo ""
+
+echo "=========================================="
+echo "[OK] LDAP Client Setup Complete"
+echo "=========================================="
+echo ""
+echo "Testing commands:"
+echo "  - List LDAP users: getent passwd"
+echo "  - List LDAP groups: getent group"
+echo "  - Test user: id <username>"
+echo "  - Test sudo: sudo -l -U <username>"
+echo ""
+echo "If users are not showing, wait a few seconds and try:"
+echo "  sss_cache -E && systemctl restart sssd"
+echo ""
+echo "To test sudo for a user:"
+echo "  sudo -l -U <username>"

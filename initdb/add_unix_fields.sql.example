@@ -1,0 +1,78 @@
+-- Add Unix user fields to users table
+-- Usage: Execute this script after init.sql to add Unix account support
+--
+-- This script safely adds columns to existing tables without errors if they already exist
+
+USE `goldap`;
+
+-- Add uid_number field
+SET @exist := (SELECT COUNT(*) FROM information_schema.columns
+               WHERE table_schema = DATABASE()
+               AND table_name = 'users'
+               AND column_name = 'uid_number');
+SET @sqlstmt := IF(@exist = 0,
+                   'ALTER TABLE `users` ADD COLUMN `uid_number` INT DEFAULT NULL COMMENT ''Unix UID''',
+                   'SELECT 1');
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add uid_number unique index
+SET @exist := (SELECT COUNT(*) FROM information_schema.statistics
+               WHERE table_schema = DATABASE()
+               AND table_name = 'users'
+               AND index_name = 'idx_uid_number');
+SET @sqlstmt := IF(@exist = 0,
+                   'ALTER TABLE `users` ADD UNIQUE INDEX `idx_uid_number` (`uid_number`)',
+                   'SELECT 1');
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add gid_number field
+SET @exist := (SELECT COUNT(*) FROM information_schema.columns
+               WHERE table_schema = DATABASE()
+               AND table_name = 'users'
+               AND column_name = 'gid_number');
+SET @sqlstmt := IF(@exist = 0,
+                   'ALTER TABLE `users` ADD COLUMN `gid_number` INT DEFAULT 100 COMMENT ''Unix GID''',
+                   'SELECT 1');
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add home_directory field
+SET @exist := (SELECT COUNT(*) FROM information_schema.columns
+               WHERE table_schema = DATABASE()
+               AND table_name = 'users'
+               AND column_name = 'home_directory');
+SET @sqlstmt := IF(@exist = 0,
+                   'ALTER TABLE `users` ADD COLUMN `home_directory` VARCHAR(255) DEFAULT NULL COMMENT ''Home directory''',
+                   'SELECT 1');
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add login_shell field
+SET @exist := (SELECT COUNT(*) FROM information_schema.columns
+               WHERE table_schema = DATABASE()
+               AND table_name = 'users'
+               AND column_name = 'login_shell');
+SET @sqlstmt := IF(@exist = 0,
+                   'ALTER TABLE `users` ADD COLUMN `login_shell` VARCHAR(255) DEFAULT ''/bin/bash'' COMMENT ''Login shell''',
+                   'SELECT 1');
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- Add gecos field
+SET @exist := (SELECT COUNT(*) FROM information_schema.columns
+               WHERE table_schema = DATABASE()
+               AND table_name = 'users'
+               AND column_name = 'gecos');
+SET @sqlstmt := IF(@exist = 0,
+                   'ALTER TABLE `users` ADD COLUMN `gecos` VARCHAR(255) DEFAULT NULL COMMENT ''GECOS (full name)''',
+                   'SELECT 1');
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

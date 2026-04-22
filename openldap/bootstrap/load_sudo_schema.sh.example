@@ -1,0 +1,104 @@
+#!/bin/bash
+# Load sudo schema into OpenLDAP container
+# This script runs from the host and executes commands inside the container
+#
+# Usage:
+#   CONTAINER_NAME=your-container-name \
+#   ./load_sudo_schema.sh
+
+set -e
+
+CONTAINER_NAME="${CONTAINER_NAME:-goldap.ldap}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LDIF_FILE="${SCRIPT_DIR}/ldif/sudo-schema.ldif"
+
+echo "=========================================="
+echo "LDAP Sudo Schema Loader"
+echo "=========================================="
+echo "Container: ${CONTAINER_NAME}"
+echo "Schema file: ${LDIF_FILE}"
+echo ""
+
+# Check if container exists
+echo "1. Checking container..."
+if ! docker ps --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
+    echo "[ERROR] Container ${CONTAINER_NAME} not found or not running"
+    echo ""
+    echo "Available containers:"
+    docker ps --format "  - {{.Names}}"
+    exit 1
+fi
+echo "[OK] Container is running"
+echo ""
+
+# Check if LDIF file exists
+echo "2. Checking schema file..."
+if [ ! -f "${LDIF_FILE}" ]; then
+    echo "[ERROR] Schema file not found: ${LDIF_FILE}"
+    echo ""
+    echo "Please ensure the sudo-schema.ldif file exists in the ldif directory."
+    exit 1
+fi
+echo "[OK] Schema file found"
+echo ""
+
+# Copy LDIF file to container
+echo "3. Copying schema file to container..."
+docker cp "${LDIF_FILE}" ${CONTAINER_NAME}:/tmp/sudo-schema.ldif
+echo "[OK] File copied"
+echo ""
+
+# Check if schema already exists
+echo "4. Checking existing schema..."
+if docker exec ${CONTAINER_NAME} ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=schema,cn=config" "(cn=*sudo*)" dn 2>&1 | grep -q "sudo"; then
+    echo "[SKIP] Sudo schema already loaded"
+    echo ""
+    echo "To reload the schema:"
+    echo "  1. Remove the existing schema from the container"
+    echo "  2. Run this script again"
+    exit 0
+fi
+echo "[OK] Schema not found, will load"
+echo ""
+
+# Load schema
+echo "5. Loading sudo schema..."
+docker exec ${CONTAINER_NAME} ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/sudo-schema.ldif 2>&1 || {
+    EXIT_CODE=$?
+    if [ ${EXIT_CODE} -eq 68 ]; then
+        echo "[OK] Schema already exists"
+    else
+        echo "[ERROR] Failed to load schema (exit code: ${EXIT_CODE})"
+        echo ""
+        echo "Troubleshooting:"
+        echo "  - Check the LDIF file format"
+        echo "  - Verify container logs: docker logs ${CONTAINER_NAME}"
+        exit 1
+    fi
+}
+echo "[OK] Schema loaded"
+echo ""
+
+# Verify
+echo "6. Verifying..."
+if docker exec ${CONTAINER_NAME} ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=schema,cn=config" "(cn=*sudo*)" dn 2>&1 | grep -q "sudo"; then
+    echo "[OK] Sudo schema verified"
+else
+    echo "[ERROR] Verification failed"
+    echo ""
+    echo "Please check:"
+    echo "  - Container logs: docker logs ${CONTAINER_NAME}"
+    echo "  - LDIF file content: cat ${LDIF_FILE}"
+    exit 1
+fi
+
+echo ""
+echo "=========================================="
+echo "[OK] Sudo schema ready"
+echo "=========================================="
+echo ""
+echo "Next steps:"
+echo "  - Initialize LDAP structure: ./init_ldap_structure.sh"
+echo "  - Verify sudo rules: ldapsearch -x -H ldap://localhost:389 \\"
+echo "      -b 'ou=sudoers,dc=example,dc=com' '(objectClass=sudoRole)'"
+echo ""
